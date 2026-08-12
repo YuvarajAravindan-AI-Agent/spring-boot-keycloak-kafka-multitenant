@@ -15,6 +15,14 @@ spring:
           uri: ${ORDERS_URL:http://localhost:8081}
           predicates:
             - Path=/api/orders/**
+
+        # Test-data generation also lives in orders-service. It needs its own route because
+        # Path=/api/orders/** does not match /api/admin/seed -- a gap that is invisible when
+        # you test the service directly on its own port and only appears through the gateway.
+        - id: orders-admin
+          uri: ${ORDERS_URL:http://localhost:8081}
+          predicates:
+            - Path=/api/admin/**
         - id: inventory
           uri: ${INVENTORY_URL:http://localhost:8082}
           predicates:
