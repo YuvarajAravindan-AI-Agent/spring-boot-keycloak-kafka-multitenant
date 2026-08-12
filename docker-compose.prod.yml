@@ -60,7 +60,10 @@ services:
   orders-service:
     build:
       dockerfile: infra/docker/Dockerfile.build
-    mem_limit: 400m
+    # 512m rather than 400m: JOIN_FETCH deliberately materialises the whole table, and at
+    # 400m it sat at 99.7% of its limit and spent 13s in GC to serve one page. The demo is
+    # supposed to show that strategy being wasteful, not show the container dying.
+    mem_limit: 512m
     restart: unless-stopped
     environment:
       KEYCLOAK_ISSUER: ${PUBLIC_ORIGIN}/realms/platform
@@ -69,7 +72,10 @@ services:
       KEYCLOAK_TOKEN_URL: ${PUBLIC_ORIGIN}/realms/platform/protocol/openid-connect/token
       # Caps for a demo whose credentials are published in the README.
       PLATFORM_DEMO_MAX_ORDERS_PER_REQUEST: "1000"
-      PLATFORM_DEMO_MAX_ORDERS_PER_TENANT: "5000"
+      # Caps the worst case JOIN_FETCH can reach: ~20k rows materialised, which is
+      # still a 100x gap against TWO_QUERY and completes in seconds rather than
+      # tens of seconds on a shared host.
+      PLATFORM_DEMO_MAX_ORDERS_PER_TENANT: "2000"
     ports: !override
       - "127.0.0.1:${ORDERS_BIND_PORT:-18081}:8081"
 

@@ -1,0 +1,11 @@
+[Unit]
+Description=Reset the public Spring microservices demo to its baseline
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/spring-microservices/infra/deploy/reset-demo.sh
+# The stack may still be settling after a host reboot; a single retry beats a failed unit.
+Restart=on-failure
+RestartSec=120

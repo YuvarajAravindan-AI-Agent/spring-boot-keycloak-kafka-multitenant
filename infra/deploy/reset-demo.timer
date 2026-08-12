@@ -1,0 +1,11 @@
+[Unit]
+Description=Nightly reset of the public Spring microservices demo
+
+[Timer]
+OnCalendar=*-*-* 03:15:00
+# Runs if the machine was asleep at 03:15 rather than skipping to the next day.
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target
