@@ -9,7 +9,10 @@ spring:
     gateway:
       httpclient:
         connect-timeout: 2000
-        response-timeout: 10s
+        # Generous on purpose: NAIVE and JOIN_FETCH are slow *by design* here, and a gateway
+        # timeout would present the N+1 demonstration as a broken endpoint rather than a slow
+        # one — hiding the exact thing the endpoint exists to show.
+        response-timeout: 30s
       routes:
         - id: orders
           uri: ${ORDERS_URL:http://localhost:8081}
@@ -23,6 +26,11 @@ spring:
           uri: ${ORDERS_URL:http://localhost:8081}
           predicates:
             - Path=/api/admin/**
+          metadata:
+            # Seeding thousands of rows outruns the global timeout on a small host. The write
+            # committed anyway, so the caller got a 504 for a request that had succeeded —
+            # the worst kind of failure, because retrying it doubles the data.
+            response-timeout: 120000
         - id: inventory
           uri: ${INVENTORY_URL:http://localhost:8082}
           predicates:
