@@ -184,6 +184,13 @@
     });
   }
 
+  // ?run=1 starts the comparison on load, so the demo can be linked in a way that shows
+  // results immediately rather than asking the reader to find a button. Seeding is still
+  // bounded and rate limited, so this is not a lever worth pulling repeatedly.
+  function maybeAutoRun() {
+    if (/[?&]run=1\b/.test(location.search)) { runBtn.click(); }
+  }
+
   runBtn.addEventListener('click', function () {
     runBtn.disabled = true;
     tbody.innerHTML = '';
@@ -244,6 +251,7 @@
       runBtn.disabled = false;
     });
   });
+  maybeAutoRun();
 })();
 </script>
 </body>

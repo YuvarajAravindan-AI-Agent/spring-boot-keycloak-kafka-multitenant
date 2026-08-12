@@ -1,5 +1,8 @@
 # Multi-tenant Spring Boot microservices — Keycloak, Kafka, Postgres, Redis
 
+**▶ Running live: <https://spring-microservices.ai-agentic-enterprises.com>** — press *Run the
+comparison* and the numbers below are measured on that server, in that moment.
+
 A working reference implementation of the stack most Java backend teams actually run:
 Spring Boot 3.4 services behind a gateway, Keycloak for OIDC, Kafka between them, Postgres
 per service, Redis for cached reads, all on Docker Compose with a CI pipeline.
@@ -18,6 +21,10 @@ path tells you nothing about whether the author has debugged this stack at 2am.
 make up      # build jars, start the stack, wait for health
 make demo    # prove all of the above, end to end
 ```
+
+[![Live demo](docs/live-demo.png)](https://spring-microservices.ai-agentic-enterprises.com)
+
+*The hosted instance, run from a browser. Below, the same thing from a terminal:*
 
 ![demo.sh output](docs/demo-run.png)
 
@@ -203,6 +210,33 @@ database in compatibility mode is a different dialect wearing a costume, and it 
 precisely these differences.
 
 `mvn -Pno-docker test` runs only the tests that need no daemon.
+
+**[`docs/test-cases.md`](docs/test-cases.md)** documents every case and, for each one, the
+specific production failure it would have caught — plus the gaps that are deliberately not
+covered.
+
+## Hosting
+
+The live instance runs on a small shared VPS behind Caddy, deployed straight from this
+repository ([`docker-compose.prod.yml`](docker-compose.prod.yml)). Notes for anyone doing the
+same:
+
+- **Hard `mem_limit` on every container.** On a host with neighbours, a ceiling the kernel
+  enforces means this stack dies alone instead of the OOM killer choosing whichever process is
+  largest. `-XX:MaxRAMPercentage=70` in the image sizes each heap from its limit, so there is
+  no second number to forget.
+- **The per-tenant cap is a memory decision, not a UX one.** `JOIN_FETCH` materialises the
+  whole table on purpose; at 3,751 orders it pinned orders-service at 99.7% of a 400 MB limit
+  and spent 13 s in GC to serve one page. The cap keeps the worst case demonstrative rather
+  than fatal.
+- **A demo that grows every time it is used will eventually look broken.** A nightly timer
+  ([`infra/deploy/`](infra/deploy/)) truncates, restores stock, flushes Redis and reseeds a
+  fixed baseline — and fails loudly if the reseed does not write, rather than leaving an empty
+  demo that reports success.
+- **Rate limiting is not optional here.** Two endpoints are slow by design and the credentials
+  are published above, so the gateway holds a per-IP token bucket and a global in-flight cap
+  on the expensive paths. 60 parallel requests: 9 served, 51 refused with 429.
+- **Keycloak's admin console is refused at the proxy** as well as pinned in its own config.
 
 ## Four things that cost real time to get right
 
