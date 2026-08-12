@@ -1,0 +1,33 @@
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        generate_statistics: true
+        query.fail_on_pagination_over_collection_fetch: false
+  flyway:
+    enabled: true
+  kafka:
+    listener:
+      auto-startup: false      # no broker in these tests; the producer is mocked
+    bootstrap-servers: localhost:59092
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # Never contacted: these tests exercise the service layer directly and bind the
+          # tenant themselves, rather than minting tokens against a real Keycloak.
+          issuer-uri: http://localhost:59180/realms/platform
+
+platform:
+  clients:
+    inventory-url: http://localhost:59082
+  keycloak:
+    auth-url: http://localhost:59180/realms/platform/protocol/openid-connect/auth
+    token-url: http://localhost:59180/realms/platform/protocol/openid-connect/token
+
+logging:
+  level:
+    org.testcontainers: WARN
+    com.github.dockerjava: WARN

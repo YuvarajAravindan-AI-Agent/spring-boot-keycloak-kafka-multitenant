@@ -1,0 +1,92 @@
+server:
+  port: 8082
+
+spring:
+  application:
+    name: inventory-service
+
+  datasource:
+    url: ${INVENTORY_DB_URL:jdbc:postgresql://localhost:5432/inventory}
+    username: ${INVENTORY_DB_USER:inventory}
+    password: ${INVENTORY_DB_PASSWORD:inventory}
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        generate_statistics: true
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      timeout: 2s
+
+  cache:
+    type: redis
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      acks: all
+      properties:
+        enable.idempotence: true
+    consumer:
+      group-id: inventory-service
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      properties:
+        spring.deserializer.value.delegate.class: org.springframework.kafka.support.serializer.JsonDeserializer
+        spring.json.trusted.packages: "dev.yuvaraj.reference.*"
+        # The producer stamps its own class name in a type header. This consumer has its own
+        # copy of the contract in a different package, so the header is ignored and the local
+        # type is used instead -- that is what lets the two services evolve separately.
+        spring.json.use.type.headers: false
+        spring.json.value.default.type: dev.yuvaraj.reference.inventory.events.OrderPlacedEvent
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # issuer-uri is compared against the token's `iss` claim; jwk-set-uri is the address
+          # actually dialled to fetch signing keys. They differ inside Docker, where the token
+          # says localhost and only the container network can reach Keycloak. Spring Boot adds
+          # a JwtIssuerValidator when both are set, so pinning the JWKS does not silently drop
+          # issuer checking.
+          issuer-uri: ${KEYCLOAK_ISSUER:http://localhost:18180/realms/platform}
+          jwk-set-uri: ${KEYCLOAK_JWKS:http://localhost:18180/realms/platform/protocol/openid-connect/certs}
+
+platform:
+  security:
+    client-id: orders-api
+    tenant-claim: tenant_id
+  kafka:
+    topics:
+      order-placed: orders.placed
+      stock-reserved: inventory.stock-reserved
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: when_authorized
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+
+logging:
+  level:
+    dev.yuvaraj.reference: INFO

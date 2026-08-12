@@ -1,0 +1,51 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: gateway-service
+
+  cloud:
+    gateway:
+      httpclient:
+        connect-timeout: 2000
+        response-timeout: 10s
+      routes:
+        - id: orders
+          uri: ${ORDERS_URL:http://localhost:8081}
+          predicates:
+            - Path=/api/orders/**
+        - id: inventory
+          uri: ${INVENTORY_URL:http://localhost:8082}
+          predicates:
+            - Path=/api/inventory/**
+      default-filters:
+        # Strip any tenant header a client tried to set on the way in. The tenant is derived
+        # from the signed token inside each service; accepting it from the edge would make the
+        # whole isolation story a suggestion.
+        - RemoveRequestHeader=X-Tenant-Id
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # issuer-uri is compared against the token's `iss` claim; jwk-set-uri is the address
+          # actually dialled to fetch signing keys. They differ inside Docker, where the token
+          # says localhost and only the container network can reach Keycloak. Spring Boot adds
+          # a JwtIssuerValidator when both are set, so pinning the JWKS does not silently drop
+          # issuer checking.
+          issuer-uri: ${KEYCLOAK_ISSUER:http://localhost:18180/realms/platform}
+          jwk-set-uri: ${KEYCLOAK_JWKS:http://localhost:18180/realms/platform/protocol/openid-connect/certs}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,gateway
+  endpoint:
+    health:
+      show-details: when_authorized
+
+logging:
+  level:
+    dev.yuvaraj.reference: INFO

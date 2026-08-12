@@ -1,0 +1,22 @@
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+  cache:
+    type: redis
+  kafka:
+    listener:
+      auto-startup: false
+    bootstrap-servers: localhost:59092
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: http://localhost:59180/realms/platform
+
+logging:
+  level:
+    org.testcontainers: WARN
+    com.github.dockerjava: WARN

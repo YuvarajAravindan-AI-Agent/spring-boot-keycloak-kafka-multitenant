@@ -1,0 +1,177 @@
+# Full stack: Keycloak, Kafka, Postgres, Redis and the three services.
+#
+# Every service waits on a real health check rather than a sleep, because Keycloak's realm
+# import and Kafka's first leader election both take longer than any fixed delay you would
+# guess, and "works on my machine" usually means "my machine is slow enough".
+
+name: keycloak-kafka-reference
+
+services:
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    ports:
+      - "${POSTGRES_PORT:-15432}:5432"
+    volumes:
+      - ./infra/postgres/init-databases.sql:/docker-entrypoint-initdb.d/init-databases.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "no", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    ports:
+      - "${REDIS_PORT:-16379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  kafka:
+    image: apache/kafka:4.1.2
+    # KRaft: no ZooKeeper. A single broker acting as its own controller, which is why every
+    # replication factor below is 1 -- anything higher never becomes available on one node and
+    # the first producer send hangs until it times out.
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093,EXTERNAL://0.0.0.0:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:${KAFKA_PORT:-39092}
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    ports:
+      - "${KAFKA_PORT:-39092}:29092"
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 20s
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_HEALTH_ENABLED: "true"
+      KC_HTTP_PORT: 8180
+      # Pins the issuer. Keycloak otherwise derives `iss` from whatever address it was reached
+      # at, so a token minted through localhost and a service validating against
+      # http://keycloak:8180 disagree, and every request comes back 401 with nothing in the
+      # logs but "Invalid issuer". Fixing the hostname makes `iss` the same string everywhere;
+      # services then fetch the JWKS over the internal address explicitly (KEYCLOAK_JWKS below)
+      # rather than following discovery.
+      KC_HOSTNAME: http://localhost:${KEYCLOAK_PORT:-18180}
+    volumes:
+      - ./infra/keycloak/platform-realm.json:/opt/keycloak/data/import/platform-realm.json:ro
+    ports:
+      - "${KEYCLOAK_PORT:-18180}:8180"
+    healthcheck:
+      # Keycloak's management endpoints moved to port 9000 in 25+, and the image has no curl
+      # or wget -- hence talking to /dev/tcp from bash.
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/9000 && echo -e 'GET /health/ready HTTP/1.1\\nHost: localhost\\nConnection: close\\n\\n' >&3 && cat <&3 | grep -q '\"status\": \"UP\"'"]
+      interval: 10s
+      timeout: 10s
+      retries: 40
+      start_period: 20s
+
+  orders-service:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile
+      args:
+        SERVICE: orders-service
+    environment:
+      ORDERS_DB_URL: jdbc:postgresql://postgres:5432/orders
+      ORDERS_DB_USER: orders
+      ORDERS_DB_PASSWORD: orders
+      KAFKA_BOOTSTRAP: kafka:9092
+      REDIS_HOST: redis
+      INVENTORY_URL: http://inventory-service:8082
+      # The issuer string as it appears in the token (host-facing), and the JWKS endpoint as
+      # this container can actually reach it (internal). Both are needed: one is compared, the
+      # other is fetched.
+      KEYCLOAK_ISSUER: http://localhost:${KEYCLOAK_PORT:-18180}/realms/platform
+      KEYCLOAK_JWKS: http://keycloak:8180/realms/platform/protocol/openid-connect/certs
+      # Browser-facing URLs for the Swagger UI OAuth flow: the browser cannot resolve the
+      # container hostname, so these must be the host-published address, not the internal one.
+      KEYCLOAK_AUTH_URL: http://localhost:${KEYCLOAK_PORT:-18180}/realms/platform/protocol/openid-connect/auth
+      KEYCLOAK_TOKEN_URL: http://localhost:${KEYCLOAK_PORT:-18180}/realms/platform/protocol/openid-connect/token
+    ports:
+      - "${ORDERS_PORT:-8081}:8081"
+    depends_on:
+      postgres: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+      keycloak: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:8081/actuator/health | grep -q UP"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  inventory-service:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile
+      args:
+        SERVICE: inventory-service
+    environment:
+      INVENTORY_DB_URL: jdbc:postgresql://postgres:5432/inventory
+      INVENTORY_DB_USER: inventory
+      INVENTORY_DB_PASSWORD: inventory
+      KAFKA_BOOTSTRAP: kafka:9092
+      REDIS_HOST: redis
+      KEYCLOAK_ISSUER: http://localhost:${KEYCLOAK_PORT:-18180}/realms/platform
+      KEYCLOAK_JWKS: http://keycloak:8180/realms/platform/protocol/openid-connect/certs
+    ports:
+      - "${INVENTORY_PORT:-8082}:8082"
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+      keycloak: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:8082/actuator/health | grep -q UP"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  gateway-service:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile
+      args:
+        SERVICE: gateway-service
+    environment:
+      ORDERS_URL: http://orders-service:8081
+      INVENTORY_URL: http://inventory-service:8082
+      KEYCLOAK_ISSUER: http://localhost:${KEYCLOAK_PORT:-18180}/realms/platform
+      KEYCLOAK_JWKS: http://keycloak:8180/realms/platform/protocol/openid-connect/certs
+    ports:
+      - "${GATEWAY_PORT:-18080}:8080"
+    depends_on:
+      keycloak: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:8080/actuator/health | grep -q UP"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 20s

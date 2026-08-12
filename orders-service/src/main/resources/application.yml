@@ -1,0 +1,98 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: orders-service
+
+  datasource:
+    url: ${ORDERS_DB_URL:jdbc:postgresql://localhost:5432/orders}
+    username: ${ORDERS_DB_USER:orders}
+    password: ${ORDERS_DB_PASSWORD:orders}
+    hikari:
+      maximum-pool-size: 10
+
+  jpa:
+    open-in-view: false          # a lazy collection resolving in the view layer is an N+1 nobody sees
+    hibernate:
+      ddl-auto: validate         # Flyway owns the schema; Hibernate only checks the mapping matches
+    properties:
+      hibernate:
+        generate_statistics: true          # feeds StatementCounter
+        jdbc.batch_size: 50
+        order_inserts: true
+        order_updates: true
+        query.fail_on_pagination_over_collection_fetch: false  # let JOIN_FETCH demonstrate itself
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      acks: all
+      properties:
+        enable.idempotence: true
+    consumer:
+      group-id: orders-service
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      properties:
+        spring.deserializer.value.delegate.class: org.springframework.kafka.support.serializer.JsonDeserializer
+        # Trust the inventory package and map its event onto ours by name. Without this the
+        # consumer refuses the payload because the producer's class is not on this classpath.
+        spring.json.trusted.packages: "dev.yuvaraj.reference.*"
+        spring.json.value.default.type: dev.yuvaraj.reference.orders.events.StockReservedEvent
+        spring.json.use.type.headers: false
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # issuer-uri is compared against the token's `iss` claim; jwk-set-uri is the address
+          # actually dialled to fetch signing keys. They differ inside Docker, where the token
+          # says localhost and only the container network can reach Keycloak. Spring Boot adds
+          # a JwtIssuerValidator when both are set, so pinning the JWKS does not silently drop
+          # issuer checking.
+          issuer-uri: ${KEYCLOAK_ISSUER:http://localhost:18180/realms/platform}
+          jwk-set-uri: ${KEYCLOAK_JWKS:http://localhost:18180/realms/platform/protocol/openid-connect/certs}
+
+platform:
+  security:
+    client-id: orders-api
+    tenant-claim: tenant_id
+  clients:
+    inventory-url: ${INVENTORY_URL:http://localhost:8082}
+  kafka:
+    topics:
+      order-placed: orders.placed
+      stock-reserved: inventory.stock-reserved
+  keycloak:
+    auth-url: ${KEYCLOAK_AUTH_URL:http://localhost:18180/realms/platform/protocol/openid-connect/auth}
+    token-url: ${KEYCLOAK_TOKEN_URL:http://localhost:18180/realms/platform/protocol/openid-connect/token}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: when_authorized
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    oauth:
+      client-id: swagger-ui
+      use-pkce-with-authorization-code-grant: true
+
+logging:
+  level:
+    dev.yuvaraj.reference: INFO
+    # Uncomment to watch the N+1 happen statement by statement:
+    # org.hibernate.SQL: DEBUG

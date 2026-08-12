@@ -1,0 +1,177 @@
+{
+  "realm": "platform",
+  "enabled": true,
+  "displayName": "Multi-tenant platform",
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "accessTokenLifespan": 1800,
+
+  "components": {
+    "org.keycloak.userprofile.UserProfileProvider": [
+      {
+        "name": "declarative-user-profile",
+        "providerId": "declarative-user-profile",
+        "subComponents": {},
+        "config": {
+          "kc.user.profile.config": [
+            "{\"attributes\":[{\"name\":\"username\",\"displayName\":\"${username}\",\"validations\":{\"length\":{\"min\":3,\"max\":255},\"username-prohibited-characters\":{},\"up-username-not-idn-homograph\":{}},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]},\"multivalued\":false},{\"name\":\"email\",\"displayName\":\"${email}\",\"validations\":{\"email\":{},\"length\":{\"max\":255}},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]},\"multivalued\":false},{\"name\":\"firstName\",\"displayName\":\"${firstName}\",\"validations\":{\"length\":{\"max\":255},\"person-name-prohibited-characters\":{}},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]},\"multivalued\":false},{\"name\":\"lastName\",\"displayName\":\"${lastName}\",\"validations\":{\"length\":{\"max\":255},\"person-name-prohibited-characters\":{}},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]},\"multivalued\":false},{\"name\":\"tenant_id\",\"displayName\":\"Tenant\",\"validations\":{\"length\":{\"max\":64}},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\"]},\"multivalued\":false}],\"groups\":[],\"unmanagedAttributePolicy\":\"ENABLED\"}"
+          ]
+        }
+      }
+    ]
+  },
+
+  "roles": {
+    "realm": [
+      {
+        "name": "platform-admin",
+        "description": "May seed test data into their own tenant"
+      }
+    ],
+    "client": {
+      "orders-api": [
+        { "name": "orders:read", "description": "List orders in the caller's tenant" },
+        { "name": "orders:write", "description": "Place orders in the caller's tenant" }
+      ]
+    }
+  },
+
+  "clients": [
+    {
+      "clientId": "orders-api",
+      "name": "Orders / Inventory resource server",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "bearerOnly": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "secret": "orders-api-secret",
+      "description": "Owns the orders:read / orders:write client roles. Bearer-only: it validates tokens and never requests them."
+    },
+    {
+      "clientId": "platform-cli",
+      "name": "Demo CLI",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "fullScopeAllowed": true,
+      "description": "Password grant, used only by demo.sh to mint tokens. A public client with direct access grants is fine for a local demo and would be unacceptable in production, where an interactive flow with PKCE belongs instead.",
+      "protocolMappers": [
+        {
+          "name": "tenant_id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "tenant_id",
+            "claim.name": "tenant_id",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        },
+        {
+          "name": "audience-orders-api",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "orders-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "swagger-ui",
+      "name": "Swagger UI",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "fullScopeAllowed": true,
+      "redirectUris": [
+        "http://localhost:8081/*",
+        "http://localhost:8082/*"
+      ],
+      "webOrigins": ["+"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      },
+      "protocolMappers": [
+        {
+          "name": "tenant_id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "tenant_id",
+            "claim.name": "tenant_id",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        },
+        {
+          "name": "audience-orders-api",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "orders-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
+    }
+  ],
+
+  "users": [
+    {
+      "username": "alice",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "alice@tenant-a.example",
+      "firstName": "Alice",
+      "lastName": "Anderson",
+      "attributes": { "tenant_id": ["tenant-a"] },
+      "credentials": [{ "type": "password", "value": "alice", "temporary": false }],
+      "realmRoles": ["platform-admin"],
+      "clientRoles": { "orders-api": ["orders:read", "orders:write"] }
+    },
+    {
+      "username": "bob",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "bob@tenant-b.example",
+      "firstName": "Bob",
+      "lastName": "Brown",
+      "attributes": { "tenant_id": ["tenant-b"] },
+      "credentials": [{ "type": "password", "value": "bob", "temporary": false }],
+      "realmRoles": ["platform-admin"],
+      "clientRoles": { "orders-api": ["orders:read", "orders:write"] }
+    },
+    {
+      "username": "readonly",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "readonly@tenant-a.example",
+      "firstName": "Rita",
+      "lastName": "Read",
+      "attributes": { "tenant_id": ["tenant-a"] },
+      "credentials": [{ "type": "password", "value": "readonly", "temporary": false }],
+      "clientRoles": { "orders-api": ["orders:read"] }
+    }
+  ]
+}

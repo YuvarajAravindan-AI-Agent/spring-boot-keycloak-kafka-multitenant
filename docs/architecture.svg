@@ -1,0 +1,156 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1240" height="700" viewBox="0 0 1240 700" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b"/>
+    </marker>
+    <marker id="arrowEvent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#c2410c"/>
+    </marker>
+    <marker id="arrowAuth" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#7c3aed"/>
+    </marker>
+    <style>
+      .box       { fill: #ffffff; stroke: #cbd5e1; stroke-width: 1.5; rx: 10; }
+      .svc       { fill: #ffffff; stroke: #0f766e; stroke-width: 2; rx: 10; }
+      .infra     { fill: #f8fafc; stroke: #94a3b8; stroke-width: 1.5; rx: 10; }
+      .auth      { fill: #faf5ff; stroke: #7c3aed; stroke-width: 2; rx: 10; }
+      .bus       { fill: #fff7ed; stroke: #c2410c; stroke-width: 2; rx: 10; }
+      .title     { font-size: 16px; font-weight: 650; fill: #0f172a; }
+      .sub       { font-size: 12px; fill: #475569; }
+      .mono      { font-size: 11.5px; fill: #334155; font-family: 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace; }
+      .port      { font-size: 11px; fill: #64748b; font-family: 'JetBrains Mono', Menlo, Consolas, monospace; }
+      .edge      { stroke: #64748b; stroke-width: 1.6; fill: none; }
+      .edgeEvent { stroke: #c2410c; stroke-width: 1.8; fill: none; }
+      .edgeAuth  { stroke: #7c3aed; stroke-width: 1.6; fill: none; stroke-dasharray: 5 4; }
+      .lbl       { font-size: 11.5px; fill: #475569; font-family: 'JetBrains Mono', Menlo, Consolas, monospace; }
+      .lblEvent  { font-size: 11.5px; fill: #c2410c; font-family: 'JetBrains Mono', Menlo, Consolas, monospace; }
+      .lblAuth   { font-size: 11.5px; fill: #7c3aed; font-family: 'JetBrains Mono', Menlo, Consolas, monospace; }
+      .hdr       { font-size: 20px; font-weight: 700; fill: #0f172a; }
+      .hdrsub    { font-size: 13px; fill: #64748b; }
+    </style>
+  </defs>
+
+  <rect width="1240" height="700" fill="#ffffff"/>
+
+  <text x="40" y="46" class="hdr">Multi-tenant order platform</text>
+  <text x="40" y="68" class="hdrsub">Spring Boot 3.4 · Keycloak OIDC · Kafka · Postgres per service · Redis</text>
+
+  <!-- Keycloak -->
+  <rect x="40" y="110" width="200" height="96" class="auth"/>
+  <text x="60" y="140" class="title">Keycloak</text>
+  <text x="60" y="160" class="sub">realm: platform</text>
+  <text x="60" y="178" class="mono">tenant_id claim</text>
+  <text x="60" y="195" class="mono">realm + client roles</text>
+  <text x="212" y="128" class="port" text-anchor="end">:18180</text>
+
+  <!-- Client -->
+  <rect x="40" y="300" width="200" height="70" class="box"/>
+  <text x="60" y="330" class="title">Client</text>
+  <text x="60" y="352" class="mono">Bearer &lt;access_token&gt;</text>
+
+  <!-- Gateway -->
+  <rect x="312" y="278" width="228" height="114" class="svc"/>
+  <text x="330" y="312" class="title">gateway-service</text>
+  <text x="330" y="333" class="sub">Spring Cloud Gateway</text>
+  <text x="330" y="353" class="mono">validates JWT</text>
+  <text x="330" y="371" class="mono">strips X-Tenant-Id</text>
+  <text x="524" y="386" class="port" text-anchor="end">:18080</text>
+
+  <!-- Orders -->
+  <rect x="620" y="150" width="230" height="118" class="svc"/>
+  <text x="640" y="180" class="title">orders-service</text>
+  <text x="640" y="201" class="sub">JPA · Flyway · Feign</text>
+  <text x="640" y="221" class="mono">@TenantId on every row</text>
+  <text x="640" y="239" class="mono">3 fetch strategies</text>
+  <text x="640" y="257" class="mono">publishes after commit</text>
+  <text x="822" y="170" class="port" text-anchor="end">:8081</text>
+
+  <!-- Inventory -->
+  <rect x="620" y="420" width="230" height="118" class="svc"/>
+  <text x="640" y="450" class="title">inventory-service</text>
+  <text x="640" y="471" class="sub">JPA · Flyway · Redis cache</text>
+  <text x="640" y="491" class="mono">@TenantId on every row</text>
+  <text x="640" y="509" class="mono">key: stock::&lt;tenant&gt;:&lt;sku&gt;</text>
+  <text x="640" y="527" class="mono">@Version optimistic lock</text>
+  <text x="822" y="440" class="port" text-anchor="end">:8082</text>
+
+  <!-- Kafka -->
+  <rect x="380" y="500" width="180" height="96" class="bus"/>
+  <text x="400" y="530" class="title">Kafka</text>
+  <text x="400" y="550" class="sub">KRaft, 1 broker</text>
+  <text x="400" y="570" class="mono">orders.placed</text>
+  <text x="400" y="588" class="mono">inventory.stock-reserved</text>
+
+  <!-- Postgres orders -->
+  <rect x="950" y="150" width="240" height="80" class="infra"/>
+  <text x="970" y="180" class="title">Postgres · orders</text>
+  <text x="970" y="201" class="mono">orders, order_lines</text>
+  <text x="970" y="219" class="mono">ux(tenant_id, order_ref)</text>
+
+  <!-- Postgres inventory -->
+  <rect x="950" y="420" width="240" height="70" class="infra"/>
+  <text x="970" y="450" class="title">Postgres · inventory</text>
+  <text x="970" y="471" class="mono">stock_items</text>
+
+  <!-- Redis -->
+  <rect x="950" y="512" width="240" height="70" class="infra"/>
+  <text x="970" y="542" class="title">Redis</text>
+  <text x="970" y="563" class="mono">TTL 10m, evict on write</text>
+
+  <!-- Edges -->
+  <!-- client -> gateway -->
+  <path d="M 240 335 L 306 335" class="edge" marker-end="url(#arrow)"/>
+
+  <!-- keycloak -> client (token) -->
+  <path d="M 140 206 L 140 294" class="edgeAuth" marker-end="url(#arrowAuth)"/>
+  <text x="150" y="255" class="lblAuth">issues JWT</text>
+
+  <!-- keycloak -> gateway/services JWKS -->
+  <path d="M 240 158 C 420 158 430 250 620 200" class="edgeAuth" marker-end="url(#arrowAuth)"/>
+  <text x="342" y="140" class="lblAuth">JWKS (internal)</text>
+
+  <path d="M 240 190 C 300 420 400 470 620 470" class="edgeAuth" marker-end="url(#arrowAuth)"/>
+
+  <!-- gateway -> orders -->
+  <path d="M 452 278 C 492 206 540 196 614 198" class="edge" marker-end="url(#arrow)"/>
+  <text x="556" y="268" class="lbl">/api/orders</text>
+
+  <!-- gateway -> inventory -->
+  <path d="M 456 392 C 496 470 552 478 614 474" class="edge" marker-end="url(#arrow)"/>
+  <text x="566" y="444" class="lbl">/api/inventory</text>
+
+  <!-- orders -> inventory feign -->
+  <path d="M 880 268 C 910 330 910 360 880 420" class="edge" marker-end="url(#arrow)"/>
+  <text x="892" y="348" class="lbl">Feign</text>
+  <text x="892" y="364" class="lbl">+ token relay</text>
+
+  <!-- orders -> postgres -->
+  <path d="M 850 195 L 944 192" class="edge" marker-end="url(#arrow)"/>
+
+  <!-- inventory -> postgres -->
+  <path d="M 850 458 L 944 456" class="edge" marker-end="url(#arrow)"/>
+  <!-- inventory -> redis -->
+  <path d="M 850 505 C 900 505 900 545 944 545" class="edge" marker-end="url(#arrow)"/>
+
+  <!-- orders -> kafka (orders.placed) -->
+  <path d="M 640 268 C 560 330 500 420 480 494" class="edgeEvent" marker-end="url(#arrowEvent)"/>
+  <text x="556" y="332" class="lblEvent">orders.placed</text>
+  <text x="556" y="348" class="lblEvent">+ X-Tenant-Id header</text>
+
+  <!-- kafka -> inventory -->
+  <path d="M 560 540 L 614 508" class="edgeEvent" marker-end="url(#arrowEvent)"/>
+
+  <!-- inventory -> kafka (stock-reserved) -->
+  <path d="M 620 530 L 566 566" class="edgeEvent" marker-end="url(#arrowEvent)"/>
+
+  <!-- kafka -> orders (stock-reserved) -->
+  <path d="M 392 548 C 250 548 236 300 300 246 C 400 190 520 196 614 226" class="edgeEvent" marker-end="url(#arrowEvent)"/>
+  <text x="196" y="432" class="lblEvent">inventory.</text>
+  <text x="196" y="448" class="lblEvent">stock-reserved</text>
+
+  <!-- footer note -->
+  <rect x="40" y="620" width="1150" height="52" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1" rx="8"/>
+  <text x="60" y="642" class="sub" font-weight="650">Tenant travels end to end:</text>
+  <text x="215" y="642" class="mono">signed tenant_id claim → TenantContext → Hibernate @TenantId predicate → Redis cache key → Kafka record header</text>
+  <text x="60" y="661" class="sub">Never from a request header — the gateway strips X-Tenant-Id, and each service re-validates the token rather than trusting the edge.</text>
+</svg>
