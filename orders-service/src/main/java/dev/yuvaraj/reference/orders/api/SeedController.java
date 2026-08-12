@@ -51,8 +51,8 @@ public class SeedController {
     @PreAuthorize("hasRole('platform-admin')")
     public SeedResult seed(@RequestParam(defaultValue = "500") int orders,
                            @RequestParam(defaultValue = "8") int linesPerOrder) {
-        long written = seeds.seed(orders, linesPerOrder);
-        return new SeedResult(TenantContext.requireTenant(), written, written * linesPerOrder);
+        SeedService.Written written = seeds.seed(orders, linesPerOrder);
+        return new SeedResult(TenantContext.requireTenant(), written.orders(), written.lines());
     }
 
     public record SeedResult(String tenantId, long ordersWritten, long linesWritten) {
@@ -82,6 +82,14 @@ public class SeedController {
         }
 
         /**
+         * What was actually written, not what was asked for. Returning the requested figures
+         * had the endpoint claim 999,000 lines while writing 20,000 — a response that
+         * contradicted the database it had just written to.
+         */
+        record Written(long orders, long lines) {
+        }
+
+        /**
          * Writes at most {@code maxPerRequest} orders, and never takes the tenant beyond
          * {@code maxPerTenant} in total.
          *
@@ -91,7 +99,7 @@ public class SeedController {
          * request, because the request is the thing under attack.
          */
         @Transactional
-        long seed(int requestedOrders, int requestedLines) {
+        Written seed(int requestedOrders, int requestedLines) {
             // Math.clamp is Java 21; this module targets 17.
             int linesPerOrder = Math.min(Math.max(requestedLines, 1), maxLinesPerOrder);
             int orderCount = Math.min(Math.max(requestedOrders, 0), maxPerRequest);
@@ -100,7 +108,7 @@ public class SeedController {
             long headroom = Math.max(0, maxPerTenant - existing);
             orderCount = (int) Math.min(orderCount, headroom);
             if (orderCount == 0) {
-                return 0;
+                return new Written(0, 0);
             }
 
             ThreadLocalRandom random = ThreadLocalRandom.current();
@@ -122,7 +130,7 @@ public class SeedController {
                 batch.add(order);
             }
             orders.saveAll(batch);
-            return batch.size();
+            return new Written(batch.size(), (long) batch.size() * linesPerOrder);
         }
     }
 }
