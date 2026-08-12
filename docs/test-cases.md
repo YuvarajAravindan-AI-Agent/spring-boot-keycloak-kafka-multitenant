@@ -96,7 +96,7 @@ than a screenshot.
 
 ## Verified on the live deployment
 
-Run against <https://spring-microservices.ai-agentic-enterprises.com> at an 800-order baseline:
+Run against <https://multi-tenant-microservices.ai-agentic-enterprises.com> at an 800-order baseline:
 
 ```
 STRATEGY     STATEMENTS   ROWS   MS   RETURNED

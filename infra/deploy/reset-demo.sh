@@ -15,7 +15,7 @@ set -euo pipefail
 STACK_DIR="${STACK_DIR:-/opt/spring-microservices}"
 BASELINE_ORDERS="${BASELINE_ORDERS:-800}"
 LINES_PER_ORDER="${LINES_PER_ORDER:-8}"
-ORIGIN="${ORIGIN:-https://spring-microservices.ai-agentic-enterprises.com}"
+ORIGIN="${ORIGIN:-https://multi-tenant-microservices.ai-agentic-enterprises.com}"
 
 cd "$STACK_DIR"
 COMPOSE="docker compose -f docker-compose.yml -f docker-compose.prod.yml"

@@ -1,0 +1,59 @@
+# Public demo vhost. Append to /etc/caddy/Caddyfile on the host, then `systemctl reload caddy`.
+#
+# Everything is served from one origin so that Keycloak's issuer, the browser's OAuth redirect
+# and the API all agree on a single scheme+host. Splitting Keycloak onto its own subdomain
+# works too, but then the token says one origin and the app another, and every CORS and issuer
+# problem you can have arrives at once.
+#
+# Routing, in the order Caddy evaluates it:
+#
+#   /admin*, /metrics*              -> refused. Keycloak's admin console and metrics.
+#   /realms/*, /resources/*         -> Keycloak (OIDC endpoints and the login page's assets)
+#   /swagger-ui/*, /v3/api-docs*    -> orders-service directly (the gateway routes /api only)
+#   /api/*                          -> gateway (rate limiting and JWT validation live there)
+#   everything else                 -> the static landing page
+
+multi-tenant-microservices.ai-agentic-enterprises.com {
+	encode gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+
+	# The realm is imported from version control and the demo users are published in the
+	# README, so the admin console has nothing to protect and everything to lose. Blocked
+	# here as well as pinned in Keycloak's own config — a config slip should not be enough
+	# on its own to expose it.
+	@blocked path /admin* /metrics* /health* /realms/master*
+	handle @blocked {
+		respond "The Keycloak admin console is disabled on the public demo. Clone the repo and run `make up` to get it locally." 403
+	}
+
+	# OIDC endpoints. /resources/* serves the login page's CSS and JS; without it the
+	# Swagger authorize flow renders an unstyled form and looks broken.
+	@keycloak path /realms/* /resources/*
+	handle @keycloak {
+		reverse_proxy 127.0.0.1:18180
+	}
+
+	# Swagger UI is served by orders-service itself, not by the gateway, which only routes
+	# /api/**. Proxied directly rather than adding a gateway route for it.
+	@docs path /swagger-ui* /v3/api-docs*
+	handle @docs {
+		reverse_proxy 127.0.0.1:18081
+	}
+
+	@api path /api/*
+	handle @api {
+		reverse_proxy 127.0.0.1:18080
+	}
+
+	handle {
+		root * /var/www/multi-tenant-microservices
+		rewrite * /index.html
+		file_server
+	}
+}

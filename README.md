@@ -1,6 +1,6 @@
 # Multi-tenant Spring Boot microservices — Keycloak, Kafka, Postgres, Redis
 
-**▶ Running live: <https://spring-microservices.ai-agentic-enterprises.com>** — press *Run the
+**▶ Running live: <https://multi-tenant-microservices.ai-agentic-enterprises.com>** — press *Run the
 comparison* and the numbers below are measured on that server, in that moment.
 
 A working reference implementation of the stack most Java backend teams actually run:

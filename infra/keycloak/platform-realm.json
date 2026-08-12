@@ -101,7 +101,7 @@
       "redirectUris": [
         "http://localhost:8081/*",
         "http://localhost:8082/*",
-        "https://spring-microservices.ai-agentic-enterprises.com/*"
+        "https://multi-tenant-microservices.ai-agentic-enterprises.com/*"
       ],
       "webOrigins": ["+"],
       "attributes": {
