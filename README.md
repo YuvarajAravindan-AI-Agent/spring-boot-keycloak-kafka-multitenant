@@ -22,7 +22,8 @@ make demo    # prove all of the above, end to end
 ![demo.sh output](docs/demo-run.png)
 
 *Every assertion above runs against the real stack — Keycloak, Kafka, Postgres and Redis in
-containers — and `demo.sh` exits non-zero if any of them fails. It runs on every push in CI.*
+containers — and `demo.sh` exits non-zero if any of them fails, which is what makes it usable
+as a pipeline gate rather than a README screenshot.*
 
 ---
 
@@ -58,7 +59,7 @@ database, then fetch the collection for exactly those ids — is flat on every a
 table size. Full data in [`results/results.md`](results/results.md), regenerate with
 `./bench.sh`.
 
-The cost is asserted in CI, so it cannot silently regress:
+The cost is asserted in the test suite, so it cannot silently regress:
 
 ```java
 assertThat(page.jdbcStatements()).isLessThanOrEqualTo(3);   // TWO_QUERY

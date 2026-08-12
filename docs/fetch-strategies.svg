@@ -140,7 +140,7 @@
   <text x="834" y="494" class="val">3 statements · 200 rows</text>
   <text x="834" y="513" class="note">Page the ids in the database, then fetch the collection</text>
   <text x="834" y="530" class="note">for exactly those ids. Flat on every axis at any table</text>
-  <text x="834" y="547" class="note">size. Asserted in CI so it cannot regress.</text>
+  <text x="834" y="547" class="note">size. Asserted in the tests so it cannot regress.</text>
 
   <text x="66" y="584" class="note" font-style="italic">Measured by the endpoint itself via Hibernate statistics — every figure above is reproducible with ./bench.sh.</text>
 </svg>
