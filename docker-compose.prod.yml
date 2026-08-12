@@ -41,7 +41,8 @@ services:
     ports: !override []
 
   keycloak:
-    mem_limit: 600m
+    # 90% of 600m in steady state left no room for a GC spike or a realm re-import.
+    mem_limit: 768m
     restart: unless-stopped
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_ADMIN_USER:?set KC_ADMIN_USER in .env}
@@ -53,7 +54,7 @@ services:
       KC_HOSTNAME: ${PUBLIC_ORIGIN:?set PUBLIC_ORIGIN in .env}
       # The admin console is blocked at Caddy as well; this is the second lock.
       KC_HOSTNAME_ADMIN: ${PUBLIC_ORIGIN}
-      JAVA_OPTS_APPEND: "-Xmx320m"
+      JAVA_OPTS_APPEND: "-Xmx420m"
     ports: !override
       - "127.0.0.1:${KEYCLOAK_BIND_PORT:-18180}:8180"
 
