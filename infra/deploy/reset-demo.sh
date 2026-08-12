@@ -44,4 +44,16 @@ TOKEN=$(curl -sS -m 30 -X POST "${ORIGIN}/realms/platform/protocol/openid-connec
 RESULT=$(curl -sS -m 180 -X POST -H "Authorization: Bearer ${TOKEN}" \
   "${ORIGIN}/api/admin/seed?orders=${BASELINE_ORDERS}&linesPerOrder=${LINES_PER_ORDER}")
 
+# Assert the reseed actually wrote rows. curl exits 0 for an HTTP 500, so without this the
+# unit reports success having truncated the demo and put nothing back — the worst possible
+# outcome, arrived at silently. Failing here lets systemd's Restart=on-failure retry, which
+# is what recovers the case where orders-service is still starting after a host reboot.
+WRITTEN=$(printf '%s' "$RESULT" | python3 -c \
+  'import sys,json;print(json.load(sys.stdin).get("ordersWritten",0))' 2>/dev/null || echo 0)
+
+if [ "${WRITTEN:-0}" -lt 1 ]; then
+  echo "[$(date -Is)] reseed FAILED, demo left empty: ${RESULT}" >&2
+  exit 1
+fi
+
 echo "[$(date -Is)] reseeded: ${RESULT}"
