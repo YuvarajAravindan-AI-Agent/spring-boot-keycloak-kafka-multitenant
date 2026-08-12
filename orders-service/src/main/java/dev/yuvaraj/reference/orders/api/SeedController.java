@@ -15,6 +15,8 @@ import dev.yuvaraj.reference.security.TenantContext;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 
+import org.springframework.beans.factory.annotation.Value;
+
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -41,13 +43,16 @@ public class SeedController {
         this.seeds = seeds;
     }
 
-    @Operation(summary = "Seed orders into the caller's tenant")
+    @Operation(summary = "Seed orders into the caller's tenant",
+            description = "Bounded by platform.demo.max-orders-per-tenant. On the public demo "
+                    + "the credentials are published, so an unbounded write endpoint is a disk-fill "
+                    + "waiting to happen.")
     @PostMapping("/seed")
     @PreAuthorize("hasRole('platform-admin')")
     public SeedResult seed(@RequestParam(defaultValue = "500") int orders,
                            @RequestParam(defaultValue = "8") int linesPerOrder) {
         long written = seeds.seed(orders, linesPerOrder);
-        return new SeedResult(TenantContext.requireTenant(), written, (long) orders * linesPerOrder);
+        return new SeedResult(TenantContext.requireTenant(), written, written * linesPerOrder);
     }
 
     public record SeedResult(String tenantId, long ordersWritten, long linesWritten) {
@@ -62,13 +67,42 @@ public class SeedController {
         };
 
         private final OrderRepository orders;
+        private final int maxPerRequest;
+        private final int maxPerTenant;
+        private final int maxLinesPerOrder;
 
-        SeedService(OrderRepository orders) {
+        SeedService(OrderRepository orders,
+                    @Value("${platform.demo.max-orders-per-request:1000}") int maxPerRequest,
+                    @Value("${platform.demo.max-orders-per-tenant:5000}") int maxPerTenant,
+                    @Value("${platform.demo.max-lines-per-order:20}") int maxLinesPerOrder) {
             this.orders = orders;
+            this.maxPerRequest = maxPerRequest;
+            this.maxPerTenant = maxPerTenant;
+            this.maxLinesPerOrder = maxLinesPerOrder;
         }
 
+        /**
+         * Writes at most {@code maxPerRequest} orders, and never takes the tenant beyond
+         * {@code maxPerTenant} in total.
+         *
+         * <p>Clamping rather than rejecting: a visitor who asks for a million orders gets the
+         * ceiling and a response that still demonstrates the point, instead of an error that
+         * reads as a broken demo. The count is re-checked here rather than trusted from the
+         * request, because the request is the thing under attack.
+         */
         @Transactional
-        long seed(int orderCount, int linesPerOrder) {
+        long seed(int requestedOrders, int requestedLines) {
+            // Math.clamp is Java 21; this module targets 17.
+            int linesPerOrder = Math.min(Math.max(requestedLines, 1), maxLinesPerOrder);
+            int orderCount = Math.min(Math.max(requestedOrders, 0), maxPerRequest);
+
+            long existing = orders.count();
+            long headroom = Math.max(0, maxPerTenant - existing);
+            orderCount = (int) Math.min(orderCount, headroom);
+            if (orderCount == 0) {
+                return 0;
+            }
+
             ThreadLocalRandom random = ThreadLocalRandom.current();
             List<OrderEntity> batch = new ArrayList<>(orderCount);
             Instant now = Instant.now();

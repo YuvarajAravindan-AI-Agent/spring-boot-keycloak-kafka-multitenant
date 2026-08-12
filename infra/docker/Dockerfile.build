@@ -1,0 +1,47 @@
+# Self-contained image: compiles from source, then ships only the JRE and the jar.
+#
+# The sibling Dockerfile expects `mvn package` to have already run on the host, which is right
+# for CI (build once, reuse the artifact). This one is for deploying straight from a git
+# checkout on a server that has Docker but no JDK — and it means the published repository is
+# the whole deployment, with nothing passed in out of band.
+#
+# The build stage takes no ARG, so it is byte-identical for all three services and Docker
+# builds it once and reuses the layer for the other two. Putting ARG SERVICE up here instead
+# would invalidate that and compile the reactor three times.
+
+FROM maven:3.9-eclipse-temurin-21 AS build
+WORKDIR /src
+
+# Dependencies resolve against the poms alone, so this layer survives any source-only change.
+COPY pom.xml ./
+COPY common-security/pom.xml   common-security/
+COPY gateway-service/pom.xml   gateway-service/
+COPY orders-service/pom.xml    orders-service/
+COPY inventory-service/pom.xml inventory-service/
+RUN mvn -B -ntp dependency:go-offline -DskipTests
+
+COPY common-security   common-security
+COPY gateway-service   gateway-service
+COPY orders-service    orders-service
+COPY inventory-service inventory-service
+# Tests are skipped deliberately: they need a Docker daemon for Testcontainers, which is not
+# available inside a build. CI runs them; this stage only produces the artifact.
+RUN mvn -B -ntp package -DskipTests
+
+FROM eclipse-temurin:17-jre-alpine
+
+ARG SERVICE
+RUN test -n "$SERVICE" || (echo "build arg SERVICE is required" && false)
+
+RUN addgroup -S app && adduser -S app -G app
+WORKDIR /app
+COPY --from=build /src/${SERVICE}/target/${SERVICE}-*.jar /app/application.jar
+RUN chown -R app:app /app
+USER app
+
+# Container-aware heap sizing: with a mem_limit set on the service, this sizes the heap from
+# the limit rather than from the host's total memory, which is what stops a JVM being
+# OOM-killed by a ceiling it never knew about.
+ENV JAVA_OPTS="-XX:MaxRAMPercentage=70 -XX:+ExitOnOutOfMemoryError"
+
+ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS -jar /app/application.jar"]

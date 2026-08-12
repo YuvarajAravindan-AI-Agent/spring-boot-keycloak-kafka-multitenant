@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Multi-tenant Spring Boot microservices — live demo</title>
+<meta name="description" content="Spring Boot 3.4, Keycloak, Kafka, Postgres and Redis. Three production defects reproduced, measured and fixed — running live.">
+<style>
+  :root{
+    color-scheme: light dark;
+    --bg:#f8fafc; --card:#fff; --line:#e2e8f0; --ink:#0f172a; --mut:#475569; --dim:#64748b;
+    --teal:#0f766e; --red:#dc2626; --slate:#64748b; --code:#f1f5f9;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#0b1020; --card:#111827; --line:#1f2937; --ink:#e5e7eb; --mut:#9ca3af;
+           --dim:#6b7280; --teal:#5eead4; --red:#f87171; --code:#0f172a; }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:16px/1.65 -apple-system,"Segoe UI",Inter,Helvetica,Arial,sans-serif;
+    padding:32px 20px 64px}
+  .wrap{max-width:60rem;margin:0 auto}
+  h1{font-size:1.9rem;line-height:1.2;letter-spacing:-.02em;margin:0 0 .4rem}
+  .sub{color:var(--mut);margin:0 0 1.6rem;font-size:1.02rem}
+  .tags{display:flex;flex-wrap:wrap;gap:7px;margin:0 0 2rem;padding:0;list-style:none}
+  .tags li{font:600 12px/1 ui-monospace,Menlo,Consolas,monospace;color:var(--mut);
+    border:1px solid var(--line);background:var(--card);padding:6px 10px;border-radius:999px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;
+    padding:26px 28px;margin:0 0 20px}
+  h2{font-size:1.12rem;margin:0 0 .5rem;letter-spacing:-.01em}
+  p{margin:0 0 1rem;color:var(--mut)}
+  code,kbd{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.88em;
+    background:var(--code);padding:2px 6px;border-radius:5px;color:var(--ink)}
+  a{color:var(--teal)}
+  .btn{display:inline-block;border:0;border-radius:9px;background:var(--teal);color:#fff;
+    font:600 15px/1 inherit;padding:13px 20px;cursor:pointer}
+  @media (prefers-color-scheme: dark){ .btn{color:#062925} }
+  .btn:disabled{opacity:.55;cursor:not-allowed}
+  .tblwrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  table{border-collapse:collapse;width:100%;min-width:34rem;margin:14px 0 0}
+  th,td{text-align:right;padding:9px 12px;border-bottom:1px solid var(--line);
+    font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13.5px;white-space:nowrap}
+  th{color:var(--dim);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+  th:first-child,td:first-child{text-align:left}
+  .naive{color:var(--slate)} .join{color:var(--red);font-weight:700} .two{color:var(--teal);font-weight:700}
+  .log{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;color:var(--dim);
+    margin:12px 0 0;min-height:1.4em}
+  .grid{display:grid;gap:20px;grid-template-columns:repeat(auto-fit,minmax(15rem,1fr))}
+  .foot{color:var(--dim);font-size:.9rem;margin-top:2rem}
+  ol{color:var(--mut);padding-left:1.2rem} li{margin-bottom:.4rem}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Multi-tenant Spring Boot microservices</h1>
+  <p class="sub">
+    Keycloak OIDC, Kafka, Postgres per service, Redis — running live on this page.
+    Built around three defects this architecture produces by default, each reproduced,
+    measured and fixed.
+  </p>
+
+  <ul class="tags">
+    <li>Spring Boot 3.4</li><li>Keycloak 26</li><li>Kafka (KRaft)</li><li>PostgreSQL 16</li>
+    <li>Redis 7</li><li>Spring Cloud Gateway</li><li>Feign</li><li>Flyway</li>
+    <li>Hibernate @TenantId</li><li>Testcontainers</li><li>Docker</li>
+  </ul>
+
+  <div class="card">
+    <h2>Run the N+1 comparison, live</h2>
+    <p>
+      This fetches a real token from Keycloak, seeds orders into <code>tenant-a</code>, then
+      requests <em>the same 20-row page</em> three ways. The endpoint reports its own cost
+      through Hibernate statistics — these numbers are measured on this server, now.
+    </p>
+    <button class="btn" id="run">Run the comparison</button>
+    <p class="log" id="log"></p>
+    <div class="tblwrap">
+      <table id="results" hidden>
+        <thead><tr>
+          <th>Strategy</th><th>JDBC statements</th><th>Rows materialised</th>
+          <th>ms</th><th>Returned</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <p class="log" id="verdict"></p>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>1 · The N+1 that survives its own fix</h2>
+      <p>
+        Adding <code>join fetch</code> to a <code>Pageable</code> query is the fix most
+        people ship. It drops the statement count — and quietly loads the
+        <em>entire table</em> to return twenty rows, because Hibernate cannot apply
+        <code>LIMIT</code> to a joined collection. Paging the ids first is flat at any size.
+      </p>
+    </div>
+    <div class="card">
+      <h2>2 · Cross-tenant reads</h2>
+      <p>
+        Tenancy is a Hibernate <code>@TenantId</code> discriminator resolved from the validated
+        JWT, never a method parameter. Hand-written JPQL is filtered too, and a thread with no
+        tenant bound reads <em>nothing</em> rather than everything.
+      </p>
+    </div>
+    <div class="card">
+      <h2>3 · Cross-tenant cache keys</h2>
+      <p>
+        Redis sits outside Hibernate, so <code>@TenantId</code> cannot protect it. The tenant is
+        part of the cache key, and the read shares one key expression with its eviction —
+        otherwise the evict deletes a key that was never written.
+      </p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Explore it yourself</h2>
+    <ol>
+      <li>Open the <a href="/swagger-ui.html">Swagger UI</a> and press <b>Authorize</b>.</li>
+      <li>Sign in as <code>alice</code> / <code>alice</code> (tenant-a) or
+          <code>bob</code> / <code>bob</code> (tenant-b).</li>
+      <li>Call <code>GET /api/orders</code> as each. Same tables, same query — neither sees the
+          other's rows.</li>
+      <li><code>readonly</code> / <code>readonly</code> holds <code>orders:read</code> only, so
+          <code>POST /api/orders</code> returns 403.</li>
+    </ol>
+    <p>
+      Placing an order publishes to Kafka, inventory reserves stock and replies, and the order
+      moves to <code>RESERVED</code> — usually within a second.
+    </p>
+    <p class="foot">
+      Shared demo, so requests are rate limited and the seed endpoint is capped. The admin
+      console is disabled. For the unthrottled version, clone the repo and run
+      <kbd>make up &amp;&amp; make demo</kbd>.
+    </p>
+  </div>
+
+  <p class="foot">
+    Source, architecture notes and the full test suite:
+    <a href="https://github.com/YuvarajAravindan-AI-Agent/spring-boot-keycloak-kafka-multitenant">github.com/YuvarajAravindan-AI-Agent/spring-boot-keycloak-kafka-multitenant</a>
+  </p>
+</div>
+
+<script>
+(function () {
+  var runBtn  = document.getElementById('run');
+  var logEl   = document.getElementById('log');
+  var table   = document.getElementById('results');
+  var tbody   = table.querySelector('tbody');
+  var verdict = document.getElementById('verdict');
+
+  var CLASS = { NAIVE: 'naive', JOIN_FETCH: 'join', TWO_QUERY: 'two' };
+  var say = function (m) { logEl.textContent = m; };
+  var n = function (v) { return v.toLocaleString('en-US'); };
+
+  function token() {
+    var body = new URLSearchParams({
+      client_id: 'platform-cli', username: 'alice',
+      password: 'alice', grant_type: 'password'
+    });
+    return fetch('/realms/platform/protocol/openid-connect/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body
+    }).then(function (r) {
+      if (!r.ok) throw new Error('Could not obtain a token (HTTP ' + r.status + ')');
+      return r.json();
+    }).then(function (j) { return j.access_token; });
+  }
+
+  function call(path, tok, opts) {
+    opts = opts || {};
+    opts.headers = Object.assign({ Authorization: 'Bearer ' + tok }, opts.headers || {});
+    return fetch(path, opts).then(function (r) {
+      if (r.status === 429) {
+        return r.json().catch(function () { return {}; }).then(function (p) {
+          throw new Error(p.detail || 'Rate limited — the demo is busy. Try again shortly.');
+        });
+      }
+      if (!r.ok) throw new Error(path + ' returned HTTP ' + r.status);
+      return r.json();
+    });
+  }
+
+  runBtn.addEventListener('click', function () {
+    runBtn.disabled = true;
+    tbody.innerHTML = '';
+    table.hidden = true;
+    verdict.textContent = '';
+    say('Requesting an access token from Keycloak…');
+
+    var tok;
+    token().then(function (t) {
+      tok = t;
+      say('Token acquired (tenant_id claim: tenant-a). Checking how much data is loaded…');
+      return call('/api/orders?size=1&strategy=TWO_QUERY', tok);
+    }).then(function (page) {
+      if (page.totalElements >= 200) return page.totalElements;
+      say('Seeding orders into tenant-a…');
+      return call('/api/admin/seed?orders=500&linesPerOrder=8', tok, { method: 'POST' })
+        .then(function () {
+          return call('/api/orders?size=1&strategy=TWO_QUERY', tok);
+        })
+        .then(function (p) { return p.totalElements; });
+    }).then(function (total) {
+      say('Requesting the same 20-row page three ways, against ' + n(total) + ' orders…');
+      var strategies = ['NAIVE', 'JOIN_FETCH', 'TWO_QUERY'];
+      // Sequentially, not in parallel: three concurrent heavy queries would trip the
+      // demo's own concurrency guard, which would be a confusing first impression.
+      return strategies.reduce(function (chain, s) {
+        return chain.then(function (acc) {
+          return call('/api/orders?strategy=' + s + '&page=0&size=20', tok)
+            .then(function (r) { acc.push(r); return acc; });
+        });
+      }, Promise.resolve([])).then(function (rows) { return { rows: rows, total: total }; });
+    }).then(function (out) {
+      out.rows.forEach(function (r) {
+        var tr = document.createElement('tr');
+        tr.innerHTML =
+          '<td class="' + CLASS[r.strategy] + '">' + r.strategy + '</td>' +
+          '<td>' + n(r.jdbcStatements) + '</td>' +
+          '<td class="' + CLASS[r.strategy] + '">' + n(r.rowsMaterialised) + '</td>' +
+          '<td>' + n(r.elapsedMillis) + '</td>' +
+          '<td>' + n(r.returnedElements) + '</td>';
+        tbody.appendChild(tr);
+      });
+      table.hidden = false;
+
+      var byName = {};
+      out.rows.forEach(function (r) { byName[r.strategy] = r; });
+      var jf = byName.JOIN_FETCH, tq = byName.TWO_QUERY;
+      say('Done — ' + n(out.total) + ' orders in tenant-a, page size 20.');
+      if (jf && tq) {
+        verdict.textContent =
+          'JOIN_FETCH materialised ' + n(jf.rowsMaterialised) + ' rows to return ' +
+          jf.returnedElements + '. TWO_QUERY materialised ' + n(tq.rowsMaterialised) +
+          ' for the same page. Seed again and the gap widens — that is the whole point.';
+      }
+    }).catch(function (e) {
+      say('✗ ' + e.message);
+    }).then(function () {
+      runBtn.disabled = false;
+    });
+  });
+})();
+</script>
+</body>
+</html>

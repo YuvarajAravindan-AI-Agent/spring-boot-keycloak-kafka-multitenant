@@ -35,9 +35,14 @@ public class OrderQueryService {
         this.counter = counter;
     }
 
+    /** Upper bound on {@code size}. A caller asking for a 100,000-row page is its own outage. */
+    private static final int MAX_PAGE_SIZE = 200;
+
     @Transactional(readOnly = true)
     public MeasuredPage list(FetchStrategy strategy, int page, int size) {
-        Pageable pageable = PageRequest.of(page, size);
+        Pageable pageable = PageRequest.of(
+                Math.max(page, 0),
+                Math.min(Math.max(size, 1), MAX_PAGE_SIZE));
         StatementCounter.Snapshot before = counter.snapshot();
 
         List<OrderView> content;

@@ -1,0 +1,100 @@
+# Production overlay for the public demo.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Two things this changes, both because the host is shared with other live demos:
+#
+#  1. Every container gets a hard `mem_limit`. Not a suggestion — a ceiling the kernel
+#     enforces. If this stack misbehaves it dies alone, instead of the OOM killer picking
+#     whichever neighbour happens to be largest at the time.
+#
+#  2. Nothing is published to 0.0.0.0. Ports bind to 127.0.0.1 and Caddy terminates TLS in
+#     front (see infra/caddy/orders-demo.caddyfile). Postgres, Redis and Kafka are not
+#     published at all — they are reachable only on the compose network.
+#
+# The service images set -XX:MaxRAMPercentage=70, so mem_limit sizes each JVM heap on its own:
+# raising a limit here raises the heap with it, and there is no second number to forget.
+
+services:
+
+# Build from source rather than from host-built jars: the server has Docker but no JDK, and
+# this keeps the deployment reproducible from a bare `git clone`.
+
+  postgres:
+    mem_limit: 256m
+    restart: unless-stopped
+    ports: !override []          # never exposed off-host
+
+  redis:
+    mem_limit: 96m
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "no", "--maxmemory", "48mb", "--maxmemory-policy", "allkeys-lru"]
+    ports: !override []
+
+  kafka:
+    mem_limit: 640m
+    restart: unless-stopped
+    environment:
+      # Kafka's launcher ignores MaxRAMPercentage, so its heap is set explicitly and kept
+      # well under the container limit to leave room for page cache and direct buffers.
+      KAFKA_HEAP_OPTS: "-Xmx288m -Xms288m"
+    ports: !override []
+
+  keycloak:
+    mem_limit: 600m
+    restart: unless-stopped
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_ADMIN_USER:?set KC_ADMIN_USER in .env}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_ADMIN_PASSWORD:?set KC_ADMIN_PASSWORD in .env}
+      # Behind Caddy: without this Keycloak builds redirect and issuer URLs as http on the
+      # container port, and the browser flow bounces between http and https until it fails.
+      KC_PROXY_HEADERS: xforwarded
+      KC_HTTP_ENABLED: "true"
+      KC_HOSTNAME: ${PUBLIC_ORIGIN:?set PUBLIC_ORIGIN in .env}
+      # The admin console is blocked at Caddy as well; this is the second lock.
+      KC_HOSTNAME_ADMIN: ${PUBLIC_ORIGIN}
+      JAVA_OPTS_APPEND: "-Xmx320m"
+    ports: !override
+      - "127.0.0.1:${KEYCLOAK_BIND_PORT:-18180}:8180"
+
+  orders-service:
+    build:
+      dockerfile: infra/docker/Dockerfile.build
+    mem_limit: 400m
+    restart: unless-stopped
+    environment:
+      KEYCLOAK_ISSUER: ${PUBLIC_ORIGIN}/realms/platform
+      KEYCLOAK_JWKS: http://keycloak:8180/realms/platform/protocol/openid-connect/certs
+      KEYCLOAK_AUTH_URL: ${PUBLIC_ORIGIN}/realms/platform/protocol/openid-connect/auth
+      KEYCLOAK_TOKEN_URL: ${PUBLIC_ORIGIN}/realms/platform/protocol/openid-connect/token
+      # Caps for a demo whose credentials are published in the README.
+      PLATFORM_DEMO_MAX_ORDERS_PER_REQUEST: "1000"
+      PLATFORM_DEMO_MAX_ORDERS_PER_TENANT: "5000"
+    ports: !override
+      - "127.0.0.1:${ORDERS_BIND_PORT:-18081}:8081"
+
+  inventory-service:
+    build:
+      dockerfile: infra/docker/Dockerfile.build
+    mem_limit: 400m
+    restart: unless-stopped
+    environment:
+      KEYCLOAK_ISSUER: ${PUBLIC_ORIGIN}/realms/platform
+      KEYCLOAK_JWKS: http://keycloak:8180/realms/platform/protocol/openid-connect/certs
+    ports: !override []
+
+  gateway-service:
+    build:
+      dockerfile: infra/docker/Dockerfile.build
+    mem_limit: 280m
+    restart: unless-stopped
+    environment:
+      KEYCLOAK_ISSUER: ${PUBLIC_ORIGIN}/realms/platform
+      KEYCLOAK_JWKS: http://keycloak:8180/realms/platform/protocol/openid-connect/certs
+      # The guards that keep a deliberately-slow public demo standing up.
+      PLATFORM_DEMO_GUARD_ENABLED: "true"
+      PLATFORM_DEMO_GUARD_BURST: "20"
+      PLATFORM_DEMO_GUARD_REFILL_MILLIS: "1500"
+      PLATFORM_DEMO_GUARD_MAX_CONCURRENT_HEAVY: "4"
+    ports: !override
+      - "127.0.0.1:${GATEWAY_BIND_PORT:-18080}:8080"
